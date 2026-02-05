@@ -7,6 +7,8 @@ function doPost(e) {
     
     if (action === 'saveSettings') {
       return saveSettings(e);
+    } else if (action === 'saveWin') {
+      return saveWinData(e);
     } else {
       // حفظ بيانات المستخدم (الوظيفة الأصلية)
       return saveUserData(e);
@@ -39,15 +41,50 @@ function doGet(e) {
   }
 }
 
-// حفظ الإعدادات
-function saveSettings(e) {
+// إنشاء جميع الأوراق المطلوبة عند البداية
+function initializeSheets() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
-  let settingsSheet = ss.getSheetByName('Settings');
   
+  // إنشاء ورقة Settings
+  let settingsSheet = ss.getSheetByName('Settings');
   if (!settingsSheet) {
     settingsSheet = ss.insertSheet('Settings');
     settingsSheet.appendRow(['Key', 'Value']);
   }
+  
+  // إنشاء ورقة UserData
+  let userDataSheet = ss.getSheetByName('UserData');
+  if (!userDataSheet) {
+    userDataSheet = ss.insertSheet('UserData');
+    userDataSheet.appendRow(['Name', 'Email', 'Phone', 'Timestamp']);
+  }
+  
+  // إنشاء ورقة Wins
+  let winsSheet = ss.getSheetByName('Wins');
+  if (!winsSheet) {
+    winsSheet = ss.insertSheet('Wins');
+    winsSheet.appendRow(['Name', 'Email', 'Phone', 'Prize', 'Coupon Code', 'Timestamp']);
+  }
+  
+  return ss;
+}
+
+// دالة يمكن تشغيلها يدوياً لإنشاء جميع الأوراق فوراً
+function createAllSheets() {
+  try {
+    const ss = initializeSheets();
+    Logger.log('تم إنشاء جميع الأوراق بنجاح!');
+    return 'تم إنشاء جميع الأوراق بنجاح!';
+  } catch (error) {
+    Logger.log('خطأ في إنشاء الأوراق: ' + error.toString());
+    return 'خطأ: ' + error.toString();
+  }
+}
+
+// حفظ الإعدادات
+function saveSettings(e) {
+  const ss = initializeSheets();
+  let settingsSheet = ss.getSheetByName('Settings');
   
   const settings = JSON.parse(e.parameter.settings);
   
@@ -81,7 +118,7 @@ function saveSettings(e) {
 
 // جلب الإعدادات
 function getSettings() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = initializeSheets();
   const settingsSheet = ss.getSheetByName('Settings');
   
   if (!settingsSheet || settingsSheet.getLastRow() < 2) {
@@ -124,13 +161,8 @@ function getSettings() {
 
 // حفظ بيانات المستخدم (الوظيفة الأصلية)
 function saveUserData(e) {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = initializeSheets();
   let userDataSheet = ss.getSheetByName('UserData');
-  
-  if (!userDataSheet) {
-    userDataSheet = ss.insertSheet('UserData');
-    userDataSheet.appendRow(['Name', 'Email', 'Phone', 'Timestamp']);
-  }
   
   const name = e.parameter.name || '';
   const email = e.parameter.email || '';
@@ -142,5 +174,25 @@ function saveUserData(e) {
   return ContentService.createTextOutput(JSON.stringify({
     success: true,
     message: 'User data saved'
+  })).setMimeType(ContentService.MimeType.JSON);
+}
+
+// حفظ بيانات الجائزة الفائزة
+function saveWinData(e) {
+  const ss = initializeSheets();
+  let winsSheet = ss.getSheetByName('Wins');
+  
+  const name = e.parameter.name || '';
+  const email = e.parameter.email || '';
+  const phone = e.parameter.phone || '';
+  const prize = e.parameter.prize || '';
+  const couponCode = e.parameter.couponCode || '';
+  const timestamp = e.parameter.timestamp || new Date().toISOString();
+  
+  winsSheet.appendRow([name, email, phone, prize, couponCode, timestamp]);
+  
+  return ContentService.createTextOutput(JSON.stringify({
+    success: true,
+    message: 'Win data saved'
   })).setMimeType(ContentService.MimeType.JSON);
 }
