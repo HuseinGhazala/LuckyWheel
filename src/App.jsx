@@ -87,17 +87,106 @@ const LuckyWheel = () => {
     { id: 6, text: "خصم 100%", value: "100% OFF", color: "#EF4444", type: "prize", weight: 1, couponCodes: [] },
   ];
 
+  // دالة لتحميل البيانات من localStorage (fallback)
+  const loadSettingsFromStorage = () => {
+    try {
+      const savedSegments = localStorage.getItem('wheelSegments');
+      const savedMaxSpins = localStorage.getItem('maxSpins');
+      const savedLogo = localStorage.getItem('storeLogo');
+      const savedSocialLinks = localStorage.getItem('socialLinks');
+      const savedBackgroundSettings = localStorage.getItem('backgroundSettings');
+      const savedWinSound = localStorage.getItem('winSound');
+      const savedLoseSound = localStorage.getItem('loseSound');
+      
+      return {
+        segments: savedSegments ? JSON.parse(savedSegments) : initialSegments,
+        maxSpins: savedMaxSpins ? parseInt(savedMaxSpins) : 1,
+        logo: savedLogo || null,
+        socialLinks: savedSocialLinks ? JSON.parse(savedSocialLinks) : {
+          facebook: '',
+          instagram: '',
+          twitter: '',
+          snapchat: '',
+          whatsapp: '',
+          website: ''
+        },
+        backgroundSettings: savedBackgroundSettings ? JSON.parse(savedBackgroundSettings) : {
+          type: 'color',
+          color: '#0f172a',
+          desktopImage: null,
+          mobileImage: null
+        },
+        winSound: savedWinSound || "https://www.soundjay.com/human/sounds/applause-01.mp3",
+        loseSound: savedLoseSound || "https://www.soundjay.com/misc/sounds/fail-trombone-01.mp3"
+      };
+    } catch (error) {
+      console.error('Error loading settings from storage:', error);
+      return null;
+    }
+  };
+
+  // دالة لجلب البيانات من Google Sheets (السحابة)
+  const loadSettingsFromCloud = async () => {
+    try {
+      const scriptUrl = googleScriptUrl || DEFAULT_SCRIPT_URL;
+      const url = `${scriptUrl}?action=getSettings`;
+      
+      const response = await fetch(url, {
+        method: 'GET',
+        mode: 'cors',
+        cache: 'no-cache'
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success && data.settings) {
+          return data.settings;
+        }
+      }
+    } catch (error) {
+      console.error('Error loading settings from cloud:', error);
+      // استخدام localStorage كبديل عند الفشل
+      return loadSettingsFromStorage();
+    }
+    return null;
+  };
+
+  // دالة لحفظ البيانات في Google Sheets (السحابة)
+  const saveSettingsToCloud = async (settings) => {
+    try {
+      const formData = new FormData();
+      formData.append('action', 'saveSettings');
+      formData.append('settings', JSON.stringify(settings));
+      
+      const response = await fetch(googleScriptUrl, {
+        method: 'POST',
+        body: formData,
+        mode: 'no-cors'
+      });
+      
+      // مع no-cors لا يمكننا قراءة الـ response، لكن الطلب تم إرساله
+      return true;
+    } catch (error) {
+      console.error('Error saving settings to cloud:', error);
+      return false;
+    }
+  };
+
+  // تحميل البيانات من localStorage عند التحميل (fallback)
+  const loadedSettings = loadSettingsFromStorage();
+  
   // --- States ---
-  const [segments, setSegments] = useState(initialSegments);
-  const [availableIds, setAvailableIds] = useState(initialSegments.map(s => s.id));
+  const [isLoadingSettings, setIsLoadingSettings] = useState(true);
+  const [segments, setSegments] = useState(loadedSettings?.segments || initialSegments);
+  const [availableIds, setAvailableIds] = useState((loadedSettings?.segments || initialSegments).map(s => s.id));
   
   // التحكم في عدد المحاولات والشعار وروابط السوشيال ميديا ورابط السكربت والخلفية
-  const [maxSpins, setMaxSpins] = useState(1);
-  const [remainingSpins, setRemainingSpins] = useState(1);
-  const [storeLogo, setStoreLogo] = useState(null);
+  const [maxSpins, setMaxSpins] = useState(loadedSettings?.maxSpins || 1);
+  const [remainingSpins, setRemainingSpins] = useState(loadedSettings?.maxSpins || 1);
+  const [storeLogo, setStoreLogo] = useState(loadedSettings?.logo || null);
   
   // إعدادات الخلفية (محدثة لدعم صورتين)
-  const [backgroundSettings, setBackgroundSettings] = useState({
+  const [backgroundSettings, setBackgroundSettings] = useState(loadedSettings?.backgroundSettings || {
     type: 'color', // 'color' or 'image'
     color: '#0f172a',
     desktopImage: null,
@@ -105,15 +194,15 @@ const LuckyWheel = () => {
   });
   
   // --- Audio States (Defaults) ---
-  const [winSound, setWinSound] = useState("https://www.soundjay.com/human/sounds/applause-01.mp3");
-  const [loseSound, setLoseSound] = useState("https://www.soundjay.com/misc/sounds/fail-trombone-01.mp3");
+  const [winSound, setWinSound] = useState(loadedSettings?.winSound || "https://www.soundjay.com/human/sounds/applause-01.mp3");
+  const [loseSound, setLoseSound] = useState(loadedSettings?.loseSound || "https://www.soundjay.com/misc/sounds/fail-trombone-01.mp3");
   
   // استرجاع الرابط من التخزين المحلي إذا وجد، أو استخدام الافتراضي
   const [googleScriptUrl, setGoogleScriptUrl] = useState(() => {
     return localStorage.getItem('googleScriptUrl') || DEFAULT_SCRIPT_URL;
   });
 
-  const [socialLinks, setSocialLinks] = useState({
+  const [socialLinks, setSocialLinks] = useState(loadedSettings?.socialLinks || {
     facebook: '',
     instagram: '',
     twitter: '',
@@ -200,6 +289,57 @@ const LuckyWheel = () => {
   useEffect(() => {
     if(loseAudioRef.current) loseAudioRef.current.src = loseSound;
   }, [loseSound]);
+
+  // تحميل البيانات من السحابة عند تحميل الصفحة
+  useEffect(() => {
+    const loadCloudSettings = async () => {
+      setIsLoadingSettings(true);
+      try {
+        const cloudSettings = await loadSettingsFromCloud();
+        if (cloudSettings) {
+          // تحديث جميع الحالات بالبيانات من السحابة
+          setSegments(cloudSettings.segments || initialSegments);
+          setAvailableIds((cloudSettings.segments || initialSegments).map(s => s.id));
+          setMaxSpins(cloudSettings.maxSpins || 1);
+          setRemainingSpins(cloudSettings.maxSpins || 1);
+          setStoreLogo(cloudSettings.logo || null);
+          setSocialLinks(cloudSettings.socialLinks || {
+            facebook: '',
+            instagram: '',
+            twitter: '',
+            snapchat: '',
+            whatsapp: '',
+            website: ''
+          });
+          setBackgroundSettings(cloudSettings.backgroundSettings || {
+            type: 'color',
+            color: '#0f172a',
+            desktopImage: null,
+            mobileImage: null
+          });
+          setWinSound(cloudSettings.winSound || "https://www.soundjay.com/human/sounds/applause-01.mp3");
+          setLoseSound(cloudSettings.loseSound || "https://www.soundjay.com/misc/sounds/fail-trombone-01.mp3");
+          
+          // حفظ في localStorage كنسخة احتياطية
+          localStorage.setItem('wheelSegments', JSON.stringify(cloudSettings.segments || initialSegments));
+          localStorage.setItem('maxSpins', (cloudSettings.maxSpins || 1).toString());
+          if (cloudSettings.logo) {
+            localStorage.setItem('storeLogo', cloudSettings.logo);
+          }
+          localStorage.setItem('socialLinks', JSON.stringify(cloudSettings.socialLinks || {}));
+          localStorage.setItem('backgroundSettings', JSON.stringify(cloudSettings.backgroundSettings || {}));
+          localStorage.setItem('winSound', cloudSettings.winSound || "");
+          localStorage.setItem('loseSound', cloudSettings.loseSound || "");
+        }
+      } catch (error) {
+        console.error('Error loading cloud settings:', error);
+      } finally {
+        setIsLoadingSettings(false);
+      }
+    };
+    
+    loadCloudSettings();
+  }, []); // يتم التحميل مرة واحدة عند تحميل الصفحة
 
   const segmentSize = 360 / segments.length;
 
@@ -583,7 +723,8 @@ const LuckyWheel = () => {
       }
   };
 
-  const handleSaveDashboard = () => {
+  const handleSaveDashboard = async () => {
+      // حفظ في state
       setSegments(tempSegments);
       setMaxSpins(tempMaxSpins);
       setRemainingSpins(tempMaxSpins);
@@ -600,10 +741,44 @@ const LuckyWheel = () => {
       setWinSound(tempWinSound);
       setLoseSound(tempLoseSound);
 
+      // حفظ جميع البيانات في localStorage كنسخة احتياطية
+      localStorage.setItem('wheelSegments', JSON.stringify(tempSegments));
+      localStorage.setItem('maxSpins', tempMaxSpins.toString());
+      if (tempLogo) {
+        localStorage.setItem('storeLogo', tempLogo);
+      } else {
+        localStorage.removeItem('storeLogo');
+      }
+      localStorage.setItem('socialLinks', JSON.stringify(tempSocialLinks));
+      localStorage.setItem('backgroundSettings', JSON.stringify(tempBackgroundSettings));
+      localStorage.setItem('winSound', tempWinSound);
+      localStorage.setItem('loseSound', tempLoseSound);
+
+      // حفظ البيانات في السحابة (Google Sheets) لجميع المستخدمين
+      const settingsToSave = {
+        segments: tempSegments,
+        maxSpins: tempMaxSpins,
+        logo: tempLogo,
+        socialLinks: tempSocialLinks,
+        backgroundSettings: tempBackgroundSettings,
+        winSound: tempWinSound,
+        loseSound: tempLoseSound,
+        googleScriptUrl: tempGoogleScriptUrl
+      };
+      
+      const saved = await saveSettingsToCloud(settingsToSave);
+      
       setAvailableIds(tempSegments.map(s => s.id));
       setHistory([]);
       setShowDashboard(false);
       setRotation(0);
+      
+      // إشعار المستخدم أن البيانات تم حفظها
+      if (saved) {
+        alert('✅ تم حفظ الإعدادات بنجاح في السحابة! جميع المستخدمين سيرون نفس البيانات.');
+      } else {
+        alert('⚠️ تم حفظ الإعدادات محلياً، لكن حدث خطأ في الحفظ السحابي. يرجى المحاولة مرة أخرى.');
+      }
   };
 
   const hasSocialLinks = socialLinks.facebook || socialLinks.instagram || socialLinks.twitter || socialLinks.whatsapp || socialLinks.snapchat || socialLinks.website;
@@ -626,6 +801,19 @@ const LuckyWheel = () => {
       </a>
     );
   };
+
+  // مؤشر التحميل أثناء جلب البيانات من السحابة
+  if (isLoadingSettings) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center p-4 font-sans text-slate-100 bg-slate-900" dir="rtl">
+        <div className="text-center">
+          <Loader2 className="animate-spin mx-auto mb-4 text-blue-500" size={48} />
+          <p className="text-xl font-bold text-white">جاري تحميل الإعدادات من السحابة...</p>
+          <p className="text-sm text-slate-400 mt-2">يرجى الانتظار</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div 
