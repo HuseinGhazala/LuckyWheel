@@ -131,43 +131,57 @@ const LuckyWheel = () => {
       const scriptUrl = googleScriptUrl || DEFAULT_SCRIPT_URL;
       const url = `${scriptUrl}?action=getSettings&t=${Date.now()}`; // إضافة timestamp لتجنب الـ cache
       
+      // Google Apps Script يدعم CORS تلقائياً عند النشر كـ Web App
       const response = await fetch(url, {
         method: 'GET',
-        mode: 'cors',
-        cache: 'no-cache',
-        headers: {
-          'Accept': 'application/json'
-        }
+        mode: 'no-cors', // استخدام no-cors لأن Google Script يدعم CORS تلقائياً
+        cache: 'no-cache'
       });
       
-      if (response.ok) {
-        const text = await response.text();
-        let data;
-        try {
-          data = JSON.parse(text);
-        } catch (e) {
-          console.error('Error parsing JSON:', e, text);
-          return null;
-        }
+      // مع no-cors لا يمكننا قراءة الـ response مباشرة
+      // لذلك سنستخدم طريقة بديلة: JSONP أو proxy
+      // لكن الأفضل هو استخدام طريقة أخرى
+      
+      // محاولة استخدام fetch عادي (قد يعمل إذا كان CORS مفعّل)
+      try {
+        const corsResponse = await fetch(url, {
+          method: 'GET',
+          cache: 'no-cache'
+        });
         
-        if (data.success && data.settings) {
-          console.log('✅ تم تحميل البيانات من السحابة:', data.settings);
-          return data.settings;
-        } else {
-          console.warn('⚠️ البيانات غير موجودة في السحابة:', data);
+        if (corsResponse.ok) {
+          const text = await corsResponse.text();
+          let data;
+          try {
+            data = JSON.parse(text);
+          } catch (e) {
+            console.error('Error parsing JSON:', e, text);
+            return null;
+          }
+          
+          if (data.success && data.settings) {
+            console.log('✅ تم تحميل البيانات من السحابة:', data.settings);
+            return data.settings;
+          } else {
+            console.warn('⚠️ البيانات غير موجودة في السحابة:', data);
+          }
         }
-      } else {
-        console.error('❌ خطأ في الاستجابة:', response.status, response.statusText);
+      } catch (corsError) {
+        console.warn('⚠️ CORS error, trying alternative method:', corsError);
+        // إذا فشل CORS، نستخدم البيانات المحلية
       }
+      
     } catch (error) {
       console.error('❌ خطأ في تحميل البيانات من السحابة:', error);
-      // استخدام localStorage كبديل عند الفشل
-      const localData = loadSettingsFromStorage();
-      if (localData) {
-        console.log('📦 استخدام البيانات المحلية كبديل');
-        return localData;
-      }
     }
+    
+    // استخدام localStorage كبديل عند الفشل
+    const localData = loadSettingsFromStorage();
+    if (localData) {
+      console.log('📦 استخدام البيانات المحلية كبديل');
+      return localData;
+    }
+    
     return null;
   };
 

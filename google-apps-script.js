@@ -26,34 +26,18 @@ function doGet(e) {
     const action = e.parameter.action;
     
     if (action === 'getSettings') {
-      const result = getSettings();
-      // إضافة CORS headers
-      return ContentService.createTextOutput(result.getContent())
-        .setMimeType(ContentService.MimeType.JSON)
-        .setHeaders({
-          'Access-Control-Allow-Origin': '*',
-          'Access-Control-Allow-Methods': 'GET, OPTIONS',
-          'Access-Control-Allow-Headers': 'Content-Type'
-        });
+      return getSettings();
     }
     
-    const output = ContentService.createTextOutput(JSON.stringify({
+    return ContentService.createTextOutput(JSON.stringify({
       success: false,
       error: 'Invalid action'
     })).setMimeType(ContentService.MimeType.JSON);
-    
-    return output.setHeaders({
-      'Access-Control-Allow-Origin': '*'
-    });
   } catch (error) {
-    const output = ContentService.createTextOutput(JSON.stringify({
+    return ContentService.createTextOutput(JSON.stringify({
       success: false,
       error: error.toString()
     })).setMimeType(ContentService.MimeType.JSON);
-    
-    return output.setHeaders({
-      'Access-Control-Allow-Origin': '*'
-    });
   }
 }
 
@@ -169,17 +153,10 @@ function getSettings() {
     settings[key] = value;
   }
   
-  const output = ContentService.createTextOutput(JSON.stringify({
+  return ContentService.createTextOutput(JSON.stringify({
     success: true,
     settings: settings
   })).setMimeType(ContentService.MimeType.JSON);
-  
-  // إضافة CORS headers
-  return output.setHeaders({
-    'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Methods': 'GET, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type'
-  });
 }
 
 // حفظ بيانات المستخدم (الوظيفة الأصلية)
