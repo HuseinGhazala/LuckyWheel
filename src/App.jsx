@@ -510,7 +510,27 @@ const LuckyWheel = () => {
          }
       }
 
-      if (winningSegment.type === 'prize') setHistory(prev => [...prev, { ...winningSegment, wonCode: assignedCode }]);
+      if (winningSegment.type === 'prize') {
+        setHistory(prev => [...prev, { ...winningSegment, wonCode: assignedCode }]);
+        
+        // حفظ بيانات الجائزة الفائزة في Google Sheet
+        if (isRegistered && userData.name && userData.email && userData.phone) {
+          const winFormData = new FormData();
+          winFormData.append('action', 'saveWin');
+          winFormData.append('name', userData.name);
+          winFormData.append('email', userData.email);
+          winFormData.append('phone', userData.phone);
+          winFormData.append('prize', winningSegment.text);
+          winFormData.append('couponCode', assignedCode || aiContent?.code || 'N/A');
+          winFormData.append('timestamp', new Date().toISOString());
+          
+          fetch(googleScriptUrl, { 
+            method: 'POST', 
+            body: winFormData, 
+            mode: 'no-cors' 
+          }).catch(err => console.log('Error saving win data:', err));
+        }
+      }
       setAvailableIds(prev => prev.filter(id => id !== winningId));
     }, 4500);
   };
