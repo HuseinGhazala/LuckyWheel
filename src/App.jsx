@@ -212,18 +212,23 @@ const LuckyWheel = () => {
             console.warn('⚠️ فشل تحميل الإعدادات (JSONP):', jsonpErr?.message || jsonpErr);
             return null;
           });
-          // 3) إذا فشل JSONP (مثلاً بسبب CSP أو إضافة) نجرب عبر وكيل CORS
+          // 3) إذا فشل JSONP نجرب وكيل CORS (أكثر من واحد لأن بعضها قد يرفض أو يرجع 403)
           if (data === null) {
-            try {
-              console.log('🔄 محاولة التحميل عبر وكيل CORS...');
-              const proxyUrl = 'https://corsproxy.io/?' + encodeURIComponent(fetchUrl);
-              const proxyRes = await fetch(proxyUrl);
-              if (proxyRes.ok) {
-                const text = await proxyRes.text();
-                data = JSON.parse(text);
+            const proxies = [
+              () => fetch('https://api.allorigins.win/raw?url=' + encodeURIComponent(fetchUrl)),
+              () => fetch('https://corsproxy.io/?' + encodeURIComponent(fetchUrl))
+            ];
+            for (let i = 0; i < proxies.length && data === null; i++) {
+              try {
+                console.log('🔄 محاولة التحميل عبر وكيل CORS...');
+                const proxyRes = await proxies[i]();
+                if (proxyRes.ok) {
+                  const text = await proxyRes.text();
+                  data = JSON.parse(text);
+                }
+              } catch (proxyErr) {
+                console.warn('⚠️ فشل الوكيل:', proxyErr?.message);
               }
-            } catch (proxyErr) {
-              console.warn('⚠️ فشل التحميل عبر الوكيل:', proxyErr?.message);
             }
           }
         } else {
