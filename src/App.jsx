@@ -249,9 +249,11 @@ const LuckyWheel = () => {
               console.warn('⚠️ فشل التحميل عبر iframe:', iframeErr?.message);
             }
           }
-          // 4) آخر محاولة: وكيل CORS (نتحقق أن الجسم JSON وليس HTML)
+          // 4) آخر محاولة: وكيل (نفس النطاق إن وُجد، ثم وكيلات CORS عامة)
           if (data === null) {
             const proxies = [
+              () => fetch(window.location.origin + '/get-settings-proxy.php?url=' + encodeURIComponent(fetchUrl)),
+              () => fetch('https://proxy.corsfix.com/?url=' + encodeURIComponent(fetchUrl)),
               () => fetch('https://api.allorigins.win/raw?url=' + encodeURIComponent(fetchUrl)),
               () => fetch('https://corsproxy.io/?' + encodeURIComponent(fetchUrl))
             ];
