@@ -210,9 +210,22 @@ const LuckyWheel = () => {
             (document.head || document.documentElement).appendChild(script);
           }).catch((jsonpErr) => {
             console.warn('⚠️ فشل تحميل الإعدادات (JSONP):', jsonpErr?.message || jsonpErr);
-            console.warn('💡 جرّب في نافذة خاصة (بدون إضافات) أو تأكد من نشر إصدار جديد من السكربت (doGet + getSettingsJsonp)');
             return null;
           });
+          // 3) إذا فشل JSONP (مثلاً بسبب CSP أو إضافة) نجرب عبر وكيل CORS
+          if (data === null) {
+            try {
+              console.log('🔄 محاولة التحميل عبر وكيل CORS...');
+              const proxyUrl = 'https://corsproxy.io/?' + encodeURIComponent(fetchUrl);
+              const proxyRes = await fetch(proxyUrl);
+              if (proxyRes.ok) {
+                const text = await proxyRes.text();
+                data = JSON.parse(text);
+              }
+            } catch (proxyErr) {
+              console.warn('⚠️ فشل التحميل عبر الوكيل:', proxyErr?.message);
+            }
+          }
         } else {
           throw fetchErr;
         }
