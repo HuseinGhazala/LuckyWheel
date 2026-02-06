@@ -1219,6 +1219,19 @@ const LuckyWheel = () => {
                                           <p className="text-xs text-slate-500 mt-1">
                                               ⚠️ مهم: تأكد من أن "Who has access" = "Anyone" عند النشر
                                           </p>
+                                          {tempGoogleScriptUrl && tempGoogleScriptUrl.includes('script.google.com') && (
+                                              <p className="text-xs mt-2">
+                                                  <a
+                                                      href={`${tempGoogleScriptUrl.replace(/\/?$/, '')}?action=getSettings&callback=test&t=${Date.now()}`}
+                                                      target="_blank"
+                                                      rel="noopener noreferrer"
+                                                      className="text-green-600 hover:underline font-medium"
+                                                  >
+                                                      🔗 تحقق من الرابط (فتح في تاب جديد)
+                                                  </a>
+                                                  {' — إذا ظهر نص يبدأ بـ test({"success":true... فالسكربت يعمل. إذا ظهر خطأ أو صفحة أخرى فانشر إصداراً جديداً.'}
+                                              </p>
+                                          )}
                                       </div>
                                   </div>
                               </div>
