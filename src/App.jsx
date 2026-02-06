@@ -6,6 +6,7 @@ import {
   Upload, Image as ImageIcon, Facebook, Instagram, Twitter, Globe, MessageCircle, Share2,
   Database, Link as LinkIcon, ExternalLink, Music, Play, Palette, Smartphone, Monitor, Ghost
 } from 'lucide-react';
+import { supabase, isSupabaseConfigured } from './lib/supabase';
 
 // --- مكون الكونفيتي (Confetti Canvas) ---
 const ConfettiEffect = ({ active }) => {
@@ -125,22 +126,41 @@ const LuckyWheel = () => {
     }
   };
 
-  // دالة لجلب البيانات من Google Sheets (السحابة)
+  // دالة لجلب البيانات من السحابة (Supabase أو Google Sheets)
   // تُرجع: { settings, fromCloud: true } من السحابة، أو { settings, fromCloud: false } من التخزين المحلي، أو null
   const loadSettingsFromCloud = async () => {
     try {
-      // الحصول على الرابط من localStorage أولاً (أحدث قيمة)
+      // إذا كان Supabase مُعداً نستخدمه أولاً (بدون CORS)
+      if (isSupabaseConfigured()) {
+        const { data: row, error } = await supabase.from('settings').select('*').eq('id', 1).single();
+        if (!error && row) {
+          const settings = {
+            segments: row.segments || [],
+            maxSpins: row.max_spins ?? 1,
+            logo: row.logo || null,
+            socialLinks: row.social_links || {},
+            backgroundSettings: row.background_settings || { type: 'color', color: '#0f172a', desktopImage: null, mobileImage: null },
+            winSound: row.win_sound || '',
+            loseSound: row.lose_sound || ''
+          };
+          console.log('✅ تم تحميل البيانات من Supabase بنجاح!');
+          return { settings, fromCloud: true };
+        }
+        if (error) console.warn('⚠️ Supabase:', error.message);
+        const local = loadSettingsFromStorage();
+        return local ? { settings: local, fromCloud: false } : null;
+      }
+
+      // Google Sheets: الحصول على الرابط من localStorage
       const savedUrl = localStorage.getItem('googleScriptUrl');
       const scriptUrl = savedUrl || googleScriptUrl || DEFAULT_SCRIPT_URL;
       
-      // التحقق من أن الرابط موجود وصحيح
       if (!scriptUrl || scriptUrl.trim() === '') {
         console.warn('⚠️ رابط Google Script غير محدد، استخدام البيانات المحلية');
         const local = loadSettingsFromStorage();
         return local ? { settings: local, fromCloud: false } : null;
       }
       
-      // التحقق من أن الرابط يحتوي على script.google.com
       if (!scriptUrl.includes('script.google.com')) {
         console.warn('⚠️ رابط Google Script غير صحيح:', scriptUrl);
         const local = loadSettingsFromStorage();
@@ -300,20 +320,32 @@ const LuckyWheel = () => {
     return null;
   };
 
-  // دالة لحفظ البيانات في Google Sheets (السحابة)
+  // دالة لحفظ البيانات في السحابة (Supabase أو Google Sheets)
   const saveSettingsToCloud = async (settings) => {
     try {
+      if (isSupabaseConfigured()) {
+        const { error } = await supabase.from('settings').upsert({
+          id: 1,
+          segments: settings.segments || [],
+          max_spins: settings.maxSpins ?? 1,
+          logo: settings.logo || '',
+          social_links: settings.socialLinks || {},
+          background_settings: settings.backgroundSettings || {},
+          win_sound: settings.winSound || '',
+          lose_sound: settings.loseSound || '',
+          google_script_url: settings.googleScriptUrl || '',
+          updated_at: new Date().toISOString()
+        }, { onConflict: 'id' });
+        if (error) {
+          console.error('Supabase save error:', error);
+          return false;
+        }
+        return true;
+      }
       const formData = new FormData();
       formData.append('action', 'saveSettings');
       formData.append('settings', JSON.stringify(settings));
-      
-      const response = await fetch(googleScriptUrl, {
-        method: 'POST',
-        body: formData,
-        mode: 'no-cors'
-      });
-      
-      // مع no-cors لا يمكننا قراءة الـ response، لكن الطلب تم إرساله
+      await fetch(googleScriptUrl, { method: 'POST', body: formData, mode: 'no-cors' });
       return true;
     } catch (error) {
       console.error('Error saving settings to cloud:', error);
@@ -719,22 +751,27 @@ const LuckyWheel = () => {
       if (winningSegment.type === 'prize') {
         setHistory(prev => [...prev, { ...winningSegment, wonCode: assignedCode }]);
         
-        // حفظ بيانات الجائزة الفائزة في Google Sheet
+        // حفظ بيانات الجائزة الفائزة في السحابة (Supabase أو Google)
         if (isRegistered && userData.name && userData.email && userData.phone) {
-          const winFormData = new FormData();
-          winFormData.append('action', 'saveWin');
-          winFormData.append('name', userData.name);
-          winFormData.append('email', userData.email);
-          winFormData.append('phone', userData.phone);
-          winFormData.append('prize', winningSegment.text);
-          winFormData.append('couponCode', assignedCode || aiContent?.code || 'N/A');
-          winFormData.append('timestamp', new Date().toISOString());
-          
-          fetch(googleScriptUrl, { 
-            method: 'POST', 
-            body: winFormData, 
-            mode: 'no-cors' 
-          }).catch(err => console.log('Error saving win data:', err));
+          if (isSupabaseConfigured()) {
+            supabase.from('wins').insert({
+              name: userData.name,
+              email: userData.email,
+              phone: userData.phone,
+              prize: winningSegment.text,
+              coupon_code: assignedCode || aiContent?.code || 'N/A'
+            }).then(({ error }) => { if (error) console.log('Error saving win:', error.message); });
+          } else {
+            const winFormData = new FormData();
+            winFormData.append('action', 'saveWin');
+            winFormData.append('name', userData.name);
+            winFormData.append('email', userData.email);
+            winFormData.append('phone', userData.phone);
+            winFormData.append('prize', winningSegment.text);
+            winFormData.append('couponCode', assignedCode || aiContent?.code || 'N/A');
+            winFormData.append('timestamp', new Date().toISOString());
+            fetch(googleScriptUrl, { method: 'POST', body: winFormData, mode: 'no-cors' }).catch(err => console.log('Error saving win data:', err));
+          }
         }
       }
       setAvailableIds(prev => prev.filter(id => id !== winningId));
@@ -785,14 +822,21 @@ const LuckyWheel = () => {
     if (userData.name && userData.email && userData.phone) {
         setIsSubmitting(true);
         try {
-            const formData = new FormData();
-            formData.append('name', userData.name);
-            formData.append('email', userData.email);
-            formData.append('phone', userData.phone);
-            formData.append('timestamp', new Date().toISOString());
-
-            await fetch(googleScriptUrl, { method: 'POST', body: formData, mode: 'no-cors' });
-            
+            if (isSupabaseConfigured()) {
+              const { error } = await supabase.from('user_data').insert({
+                name: userData.name,
+                email: userData.email,
+                phone: userData.phone
+              });
+              if (error) throw new Error(error.message);
+            } else {
+              const formData = new FormData();
+              formData.append('name', userData.name);
+              formData.append('email', userData.email);
+              formData.append('phone', userData.phone);
+              formData.append('timestamp', new Date().toISOString());
+              await fetch(googleScriptUrl, { method: 'POST', body: formData, mode: 'no-cors' });
+            }
             setIsRegistered(true);
             setShowRegistrationModal(false); 
             setTimeout(() => { spinWheel(true); }, 500);
