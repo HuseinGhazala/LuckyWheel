@@ -144,46 +144,75 @@ const LuckyWheel = () => {
         return loadSettingsFromStorage();
       }
       
-      // استخدام JSONP لتجاوز CORS عند الطلب من نطاق مختلف (مثل الموقع المنشور)
-      const callbackName = '__wheelSettings_' + Date.now() + '_' + Math.random().toString(36).slice(2);
-      const url = `${scriptUrl}?action=getSettings&callback=${callbackName}&t=${Date.now()}`;
-      console.log('🔄 جاري تحميل البيانات من:', url.replace(callbackName, '...'));
-      
-      const data = await new Promise((resolve, reject) => {
-        const timeout = setTimeout(() => {
-          cleanup();
-          reject(new Error('Timeout'));
-        }, 15000);
-        
-        const cleanup = () => {
-          clearTimeout(timeout);
-          delete window[callbackName];
-          if (script.parentNode) script.parentNode.removeChild(script);
-        };
-        
-        window[callbackName] = (response) => {
-          cleanup();
-          resolve(response);
-        };
-        
-        const script = document.createElement('script');
-        script.src = url;
-        script.async = true;
-        script.onerror = () => {
-          cleanup();
-          reject(new Error('Failed to load script'));
-        };
-        document.head.appendChild(script);
-      });
-      
-      if (data.success && data.settings) {
+      const baseUrl = scriptUrl.replace(/\/?$/, '');
+      const ts = Date.now();
+
+      // 1) محاولة fetch أولاً (تعمل إن كان النطاق مسموحاً أو localhost)
+      const fetchUrl = `${baseUrl}?action=getSettings&t=${ts}`;
+      console.log('🔄 جاري تحميل البيانات من السحابة...');
+      let data = null;
+
+      try {
+        const response = await fetch(fetchUrl, {
+          method: 'GET',
+          mode: 'cors',
+          cache: 'no-cache',
+          headers: { Accept: 'application/json' }
+        });
+        if (response.ok) {
+          const text = await response.text();
+          data = JSON.parse(text);
+        }
+      } catch (fetchErr) {
+        // 2) إذا فشل fetch (مثل CORS) نستخدم JSONP
+        if (fetchErr?.message === 'Failed to fetch' || fetchErr?.name === 'TypeError') {
+          console.log('🔄 استخدام JSONP بسبب CORS...');
+          data = await new Promise((resolve, reject) => {
+            const callbackName = '__wheelSettings_' + ts + '_' + Math.random().toString(36).slice(2);
+            const jsonpUrl = `${baseUrl}?action=getSettings&callback=${encodeURIComponent(callbackName)}&t=${ts}`;
+            const timeout = setTimeout(() => {
+              cleanup();
+              reject(new Error('Timeout'));
+            }, 12000);
+
+            const cleanup = () => {
+              clearTimeout(timeout);
+              delete window[callbackName];
+              if (script.parentNode) script.parentNode.removeChild(script);
+            };
+
+            window[callbackName] = (response) => {
+              cleanup();
+              resolve(response);
+            };
+
+            const script = document.createElement('script');
+            script.src = jsonpUrl;
+            script.async = true;
+            script.onerror = () => {
+              cleanup();
+              reject(new Error('Failed to load script'));
+            };
+            document.head.appendChild(script);
+          }).catch((jsonpErr) => {
+            console.warn('⚠️ فشل تحميل الإعدادات (JSONP):', jsonpErr?.message || jsonpErr);
+            console.warn('💡 تأكد من نسخ كود google-apps-script.js المحدث في مشروع Google Apps Script ثم: نشر → نشر كتطبيق ويب → إدارة الإصدارات → جديد');
+            return null;
+          });
+        } else {
+          throw fetchErr;
+        }
+      }
+
+      if (data?.success && data?.settings) {
         console.log('✅ تم تحميل البيانات من السحابة بنجاح!');
         console.log('📊 عدد الجوائز:', data.settings.segments?.length || 0);
         return data.settings;
-      } else {
-        console.warn('⚠️ البيانات غير موجودة في السحابة:', data);
-        return loadSettingsFromStorage();
       }
+      if (data !== null) {
+        console.warn('⚠️ البيانات غير موجودة في السحابة:', data);
+      }
+      return loadSettingsFromStorage();
       
     } catch (error) {
       console.error('❌ خطأ في تحميل البيانات من السحابة:', error);

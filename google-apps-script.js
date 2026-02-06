@@ -23,11 +23,14 @@ function doPost(e) {
 
 function doGet(e) {
   try {
-    const action = e.parameter.action;
+    // عند فتح الرابط من المتصفح قد لا يُمرَّر e
+    e = e || {};
+    var params = e.parameter || {};
+    const action = params.action;
     
     if (action === 'getSettings') {
       // دعم JSONP لتجاوز CORS عند الطلب من نطاق آخر (مثل الموقع المنشور)
-      const callback = e.parameter.callback;
+      const callback = params.callback;
       if (callback && /^[a-zA-Z0-9_$.]+$/.test(callback)) {
         return getSettingsJsonp(callback);
       }
