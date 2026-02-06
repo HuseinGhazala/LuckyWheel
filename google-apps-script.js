@@ -1,5 +1,9 @@
 // Google Apps Script للتحكم في بيانات عجلة الحظ
-// انسخ هذا الكود إلى Google Apps Script
+// انسخ هذا الكود بالكامل إلى Google Apps Script (ملف Code.gs)
+//
+// مهم: يجب وجود الدالتين معاً:
+//   doGet  ← لتحميل الإعدادات (GET) عند فتح الموقع
+//   doPost ← لحفظ الإعدادات والبيانات (POST)
 
 function doPost(e) {
   try {

@@ -168,8 +168,9 @@ const LuckyWheel = () => {
         if (fetchErr?.message === 'Failed to fetch' || fetchErr?.name === 'TypeError') {
           console.log('🔄 استخدام JSONP بسبب CORS...');
           data = await new Promise((resolve, reject) => {
-            const callbackName = '__wheelSettings_' + ts + '_' + Math.random().toString(36).slice(2);
-            const jsonpUrl = `${baseUrl}?action=getSettings&callback=${encodeURIComponent(callbackName)}&t=${ts}`;
+            // اسم قصير لتفادي مشاكل بعض السيرفرات/الإضافات
+            const callbackName = 'wcb_' + Math.random().toString(36).slice(2, 10);
+            const jsonpUrl = `${baseUrl}?action=getSettings&callback=${callbackName}&t=${ts}`;
             const timeout = setTimeout(() => {
               cleanup();
               reject(new Error('Timeout'));
@@ -177,8 +178,8 @@ const LuckyWheel = () => {
 
             const cleanup = () => {
               clearTimeout(timeout);
-              delete window[callbackName];
-              if (script.parentNode) script.parentNode.removeChild(script);
+              try { delete window[callbackName]; } catch (_) {}
+              try { if (script.parentNode) script.parentNode.removeChild(script); } catch (_) {}
             };
 
             window[callbackName] = (response) => {
@@ -189,14 +190,24 @@ const LuckyWheel = () => {
             const script = document.createElement('script');
             script.src = jsonpUrl;
             script.async = true;
+            // لا نضع crossOrigin حتى لا يطبّق المتصفح CORS على تحميل السكربت
             script.onerror = () => {
               cleanup();
               reject(new Error('Failed to load script'));
             };
-            document.head.appendChild(script);
+            script.onload = () => {
+              // إذا التحميل نجح لكن الـ callback لم تُستدعَ (مثلاً الرد كان JSON بدل JSONP)
+              setTimeout(() => {
+                if (window[callbackName]) {
+                  cleanup();
+                  reject(new Error('Invalid JSONP response'));
+                }
+              }, 500);
+            };
+            (document.head || document.documentElement).appendChild(script);
           }).catch((jsonpErr) => {
             console.warn('⚠️ فشل تحميل الإعدادات (JSONP):', jsonpErr?.message || jsonpErr);
-            console.warn('💡 تأكد من نسخ كود google-apps-script.js المحدث في مشروع Google Apps Script ثم: نشر → نشر كتطبيق ويب → إدارة الإصدارات → جديد');
+            console.warn('💡 جرّب في نافذة خاصة (بدون إضافات) أو تأكد أن السكربت المنشور يتضمن دوال getSettingsJsonp و getSettingsData');
             return null;
           });
         } else {
