@@ -212,7 +212,44 @@ const LuckyWheel = () => {
             console.warn('⚠️ فشل تحميل الإعدادات (JSONP):', jsonpErr?.message || jsonpErr);
             return null;
           });
-          // 3) إذا فشل JSONP نجرب وكيل CORS (أكثر من واحد لأن بعضها قد يرفض أو يرجع 403)
+          // 3) إذا فشل JSONP في الصفحة الرئيسية نجرب JSONP داخل iframe (قد يتجاوز بعض الحظر)
+          if (data === null) {
+            try {
+              console.log('🔄 محاولة التحميل عبر iframe (JSONP)...');
+              const iframeCallbackName = '__wcb__';
+              const jsonpUrlIframe = `${baseUrl}?action=getSettings&callback=${iframeCallbackName}&t=${Date.now()}`;
+              const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+              const srcdoc = '<script>window.' + iframeCallbackName + '=function(d){parent.postMessage({type:"getSettings",data:d},"*");};<\/script><script src="' + esc(jsonpUrlIframe) + '"><\/script>';
+              const iframe = document.createElement('iframe');
+              iframe.setAttribute('sandbox', 'allow-scripts');
+              iframe.style.cssText = 'position:absolute;width:0;height:0;border:0;visibility:hidden';
+              data = await new Promise((resolve) => {
+                let done = false;
+                const t = setTimeout(() => {
+                  if (done) return;
+                  done = true;
+                  window.removeEventListener('message', listener);
+                  try { iframe.parentNode?.removeChild(iframe); } catch (_) {}
+                  resolve(null);
+                }, 15000);
+                const listener = (ev) => {
+                  if (ev.source !== iframe.contentWindow || ev.data?.type !== 'getSettings') return;
+                  if (done) return;
+                  done = true;
+                  clearTimeout(t);
+                  window.removeEventListener('message', listener);
+                  try { iframe.parentNode?.removeChild(iframe); } catch (_) {}
+                  resolve(ev.data.data || null);
+                };
+                window.addEventListener('message', listener);
+                iframe.srcdoc = srcdoc;
+                (document.body || document.documentElement).appendChild(iframe);
+              });
+            } catch (iframeErr) {
+              console.warn('⚠️ فشل التحميل عبر iframe:', iframeErr?.message);
+            }
+          }
+          // 4) آخر محاولة: وكيل CORS (نتحقق أن الجسم JSON وليس HTML)
           if (data === null) {
             const proxies = [
               () => fetch('https://api.allorigins.win/raw?url=' + encodeURIComponent(fetchUrl)),
@@ -224,7 +261,7 @@ const LuckyWheel = () => {
                 const proxyRes = await proxies[i]();
                 if (proxyRes.ok) {
                   const text = await proxyRes.text();
-                  data = JSON.parse(text);
+                  if (text && text.trim().startsWith('{')) data = JSON.parse(text);
                 }
               } catch (proxyErr) {
                 console.warn('⚠️ فشل الوكيل:', proxyErr?.message);
