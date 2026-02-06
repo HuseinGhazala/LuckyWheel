@@ -26,6 +26,11 @@ function doGet(e) {
     const action = e.parameter.action;
     
     if (action === 'getSettings') {
+      // دعم JSONP لتجاوز CORS عند الطلب من نطاق آخر (مثل الموقع المنشور)
+      const callback = e.parameter.callback;
+      if (callback && /^[a-zA-Z0-9_$.]+$/.test(callback)) {
+        return getSettingsJsonp(callback);
+      }
       return getSettings();
     }
     
@@ -116,27 +121,22 @@ function saveSettings(e) {
   })).setMimeType(ContentService.MimeType.JSON);
 }
 
-// جلب الإعدادات
-function getSettings() {
+// جلب بيانات الإعدادات ككائن (للاستخدام الداخلي و JSONP)
+function getSettingsData() {
   const ss = initializeSheets();
   const settingsSheet = ss.getSheetByName('Settings');
   
   if (!settingsSheet || settingsSheet.getLastRow() < 2) {
-    return ContentService.createTextOutput(JSON.stringify({
-      success: false,
-      error: 'No settings found'
-    })).setMimeType(ContentService.MimeType.JSON);
+    return { success: false, error: 'No settings found' };
   }
   
   const data = settingsSheet.getDataRange().getValues();
   const settings = {};
   
-  // تحويل البيانات إلى كائن
   for (let i = 1; i < data.length; i++) {
     const key = data[i][0];
     let value = data[i][1];
     
-    // تحويل القيم JSON إلى كائنات
     if (key === 'segments' || key === 'socialLinks' || key === 'backgroundSettings') {
       try {
         value = JSON.parse(value);
@@ -145,7 +145,6 @@ function getSettings() {
       }
     }
     
-    // تحويل maxSpins إلى رقم
     if (key === 'maxSpins') {
       value = parseInt(value) || 1;
     }
@@ -153,10 +152,23 @@ function getSettings() {
     settings[key] = value;
   }
   
-  return ContentService.createTextOutput(JSON.stringify({
-    success: true,
-    settings: settings
-  })).setMimeType(ContentService.MimeType.JSON);
+  return { success: true, settings: settings };
+}
+
+// جلب الإعدادات (استجابة JSON عادية)
+function getSettings() {
+  const result = getSettingsData();
+  return ContentService.createTextOutput(JSON.stringify(result))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
+// جلب الإعدادات بصيغة JSONP (لتجاوز CORS من أي نطاق)
+function getSettingsJsonp(callbackName) {
+  const result = getSettingsData();
+  const jsonStr = JSON.stringify(result);
+  const jsonpBody = callbackName + '(' + jsonStr + ');';
+  return ContentService.createTextOutput(jsonpBody)
+    .setMimeType(ContentService.MimeType.JAVASCRIPT);
 }
 
 // حفظ بيانات المستخدم (الوظيفة الأصلية)

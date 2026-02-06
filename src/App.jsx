@@ -144,43 +144,44 @@ const LuckyWheel = () => {
         return loadSettingsFromStorage();
       }
       
-      const url = `${scriptUrl}?action=getSettings&t=${Date.now()}`; // إضافة timestamp لتجنب الـ cache
-      console.log('🔄 جاري تحميل البيانات من:', url);
+      // استخدام JSONP لتجاوز CORS عند الطلب من نطاق مختلف (مثل الموقع المنشور)
+      const callbackName = '__wheelSettings_' + Date.now() + '_' + Math.random().toString(36).slice(2);
+      const url = `${scriptUrl}?action=getSettings&callback=${callbackName}&t=${Date.now()}`;
+      console.log('🔄 جاري تحميل البيانات من:', url.replace(callbackName, '...'));
       
-      // استخدام fetch مع CORS (Google Apps Script يدعم CORS عند النشر بشكل صحيح)
-      const response = await fetch(url, {
-        method: 'GET',
-        mode: 'cors', // استخدام cors لأن Google Script منشور بشكل صحيح
-        cache: 'no-cache',
-        headers: {
-          'Accept': 'application/json'
-        }
+      const data = await new Promise((resolve, reject) => {
+        const timeout = setTimeout(() => {
+          cleanup();
+          reject(new Error('Timeout'));
+        }, 15000);
+        
+        const cleanup = () => {
+          clearTimeout(timeout);
+          delete window[callbackName];
+          if (script.parentNode) script.parentNode.removeChild(script);
+        };
+        
+        window[callbackName] = (response) => {
+          cleanup();
+          resolve(response);
+        };
+        
+        const script = document.createElement('script');
+        script.src = url;
+        script.async = true;
+        script.onerror = () => {
+          cleanup();
+          reject(new Error('Failed to load script'));
+        };
+        document.head.appendChild(script);
       });
       
-      console.log('📡 حالة الاستجابة:', response.status, response.statusText);
-      
-      if (response.ok) {
-        const text = await response.text();
-        console.log('📄 البيانات المستلمة:', text.substring(0, 200)); // طباعة أول 200 حرف للتحقق
-        
-        let data;
-        try {
-          data = JSON.parse(text);
-        } catch (e) {
-          console.error('❌ خطأ في تحليل JSON:', e, 'النص:', text);
-          return loadSettingsFromStorage();
-        }
-        
-        if (data.success && data.settings) {
-          console.log('✅ تم تحميل البيانات من السحابة بنجاح!');
-          console.log('📊 عدد الجوائز:', data.settings.segments?.length || 0);
-          return data.settings;
-        } else {
-          console.warn('⚠️ البيانات غير موجودة في السحابة:', data);
-          return loadSettingsFromStorage();
-        }
+      if (data.success && data.settings) {
+        console.log('✅ تم تحميل البيانات من السحابة بنجاح!');
+        console.log('📊 عدد الجوائز:', data.settings.segments?.length || 0);
+        return data.settings;
       } else {
-        console.error('❌ خطأ في الاستجابة:', response.status, response.statusText);
+        console.warn('⚠️ البيانات غير موجودة في السحابة:', data);
         return loadSettingsFromStorage();
       }
       
