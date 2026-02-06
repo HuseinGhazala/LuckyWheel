@@ -126,6 +126,7 @@ const LuckyWheel = () => {
   };
 
   // دالة لجلب البيانات من Google Sheets (السحابة)
+  // تُرجع: { settings, fromCloud: true } من السحابة، أو { settings, fromCloud: false } من التخزين المحلي، أو null
   const loadSettingsFromCloud = async () => {
     try {
       // الحصول على الرابط من localStorage أولاً (أحدث قيمة)
@@ -135,13 +136,15 @@ const LuckyWheel = () => {
       // التحقق من أن الرابط موجود وصحيح
       if (!scriptUrl || scriptUrl.trim() === '') {
         console.warn('⚠️ رابط Google Script غير محدد، استخدام البيانات المحلية');
-        return loadSettingsFromStorage();
+        const local = loadSettingsFromStorage();
+        return local ? { settings: local, fromCloud: false } : null;
       }
       
       // التحقق من أن الرابط يحتوي على script.google.com
       if (!scriptUrl.includes('script.google.com')) {
         console.warn('⚠️ رابط Google Script غير صحيح:', scriptUrl);
-        return loadSettingsFromStorage();
+        const local = loadSettingsFromStorage();
+        return local ? { settings: local, fromCloud: false } : null;
       }
       
       const baseUrl = scriptUrl.replace(/\/?$/, '');
@@ -207,7 +210,7 @@ const LuckyWheel = () => {
             (document.head || document.documentElement).appendChild(script);
           }).catch((jsonpErr) => {
             console.warn('⚠️ فشل تحميل الإعدادات (JSONP):', jsonpErr?.message || jsonpErr);
-            console.warn('💡 جرّب في نافذة خاصة (بدون إضافات) أو تأكد أن السكربت المنشور يتضمن دوال getSettingsJsonp و getSettingsData');
+            console.warn('💡 جرّب في نافذة خاصة (بدون إضافات) أو تأكد من نشر إصدار جديد من السكربت (doGet + getSettingsJsonp)');
             return null;
           });
         } else {
@@ -218,22 +221,22 @@ const LuckyWheel = () => {
       if (data?.success && data?.settings) {
         console.log('✅ تم تحميل البيانات من السحابة بنجاح!');
         console.log('📊 عدد الجوائز:', data.settings.segments?.length || 0);
-        return data.settings;
+        return { settings: data.settings, fromCloud: true };
       }
       if (data !== null) {
         console.warn('⚠️ البيانات غير موجودة في السحابة:', data);
       }
-      return loadSettingsFromStorage();
+      const local = loadSettingsFromStorage();
+      return local ? { settings: local, fromCloud: false } : null;
       
     } catch (error) {
       console.error('❌ خطأ في تحميل البيانات من السحابة:', error);
       console.error('تفاصيل الخطأ:', error.message);
       
-      // استخدام localStorage كبديل عند الفشل
       const localData = loadSettingsFromStorage();
       if (localData) {
         console.log('📦 استخدام البيانات المحلية كبديل');
-        return localData;
+        return { settings: localData, fromCloud: false };
       }
     }
     
@@ -386,12 +389,17 @@ const LuckyWheel = () => {
       console.log('🚀 بدء تحميل الإعدادات من السحابة...');
       
       try {
-        const cloudSettings = await loadSettingsFromCloud();
+        const result = await loadSettingsFromCloud();
+        const cloudSettings = result?.settings;
         
         if (cloudSettings && cloudSettings.segments) {
-          console.log('✅ تم تحميل البيانات من السحابة، عدد الجوائز:', cloudSettings.segments.length);
+          if (result.fromCloud) {
+            console.log('✅ تم تحميل البيانات من السحابة، عدد الجوائز:', cloudSettings.segments.length);
+          } else {
+            console.log('📦 تم استخدام البيانات المحلية (السحابة غير متاحة أو فشل التحميل)');
+          }
           
-          // تحديث جميع الحالات بالبيانات من السحابة
+          // تحديث جميع الحالات بالبيانات
           setSegments(cloudSettings.segments);
           setAvailableIds(cloudSettings.segments.map(s => s.id));
           setMaxSpins(cloudSettings.maxSpins || 1);
@@ -427,7 +435,9 @@ const LuckyWheel = () => {
           localStorage.setItem('winSound', cloudSettings.winSound || "");
           localStorage.setItem('loseSound', cloudSettings.loseSound || "");
           
-          console.log('✅ تم تحديث جميع الإعدادات من السحابة بنجاح!');
+          if (result.fromCloud) {
+            console.log('✅ تم تحديث جميع الإعدادات من السحابة بنجاح!');
+          }
         } else {
           console.warn('⚠️ لم يتم العثور على بيانات في السحابة، استخدام البيانات المحلية');
           // استخدام البيانات المحلية إذا كانت موجودة

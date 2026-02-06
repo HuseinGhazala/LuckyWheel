@@ -7,14 +7,16 @@
 
 function doPost(e) {
   try {
-    const action = e.parameter.action;
+    e = e || {};
+    e.parameter = e.parameter || {};
+    var params = e.parameter;
+    const action = params.action;
     
     if (action === 'saveSettings') {
       return saveSettings(e);
     } else if (action === 'saveWin') {
       return saveWinData(e);
     } else {
-      // حفظ بيانات المستخدم (الوظيفة الأصلية)
       return saveUserData(e);
     }
   } catch (error) {
